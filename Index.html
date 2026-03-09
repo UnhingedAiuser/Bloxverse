@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BlockVerse Studio</title>
+    <title>Bloxverse 2D</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -12,17 +12,14 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
-        body { margin: 0; background: #020617; color: white; font-family: sans-serif; overflow: hidden; }
-        .glass { backdrop-filter: blur(20px); background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .editor-grid { background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 20px 20px; }
-        .lua-editor { font-family: 'JetBrains Mono', monospace; background: #0f172a; color: #38bdf8; resize: none; }
+        body { margin: 0; background: #111216; color: #e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
         .hide-scroll::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
+        // Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyDWGA4LelpAKz-o7rYLpOd7Gjz_qa5RA50",
             authDomain: "bloxverse-89800.firebaseapp.com",
@@ -38,411 +35,733 @@
 
         const { useState, useEffect } = React;
 
-        function App() {
-            const [user, setUser] = useState(null);
-            const [profile, setProfile] = useState(null);
-            const [tab, setTab] = useState('STUDIO'); // STUDIO, SHOP, TOOLBOX
-            const [selection, setSelection] = useState(null); // Selected Object ID
-            const [gameData, setGameData] = useState({ name: "Untitled Game", objects: [] });
-            const [toolbox, setToolbox] = useState([]);
-            const [shopItems, setShopItems] = useState([]);
+        // --- COMPONENTS ---
 
-            useEffect(() => {
-                return auth.onAuthStateChanged(u => {
-                    if (u) {
-                        setUser(u);
-                        db.collection('profiles').doc(u.uid).onSnapshot(s => setProfile(s.data()));
-                    } else setUser(null);
-                });
-            }, []);
-
-            useEffect(() => {
-                if (!user) return;
-                const unsubTool = db.collection('artifacts/blockverse/public/data/toolbox').onSnapshot(s => setToolbox(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                const unsubShop = db.collection('artifacts/blockverse/public/data/shop').onSnapshot(s => setShopItems(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                return () => { unsubTool(); unsubShop(); };
-            }, [user]);
-
-            // --- STUDIO LOGIC ---
-            const addObject = (template = null) => {
-                const newObj = template ? { ...template, id: Date.now() } : {
-                    id: Date.now(),
-                    name: "NewPart",
-                    x: 50, y: 50,
-                    sprite: "https://i.imgur.com/RIkObxU.jpeg",
-                    script: "-- Object Script\nfunction onUpdate()\n  -- code here\nend"
-                };
-                setGameData(prev => ({ ...prev, objects: [...prev.objects, newObj] }));
-                setSelection(newObj.id);
-            };
-
-            const updateSelected = (key, val) => {
-                setGameData(prev => ({
-                    ...prev,
-                    objects: prev.objects.map(o => o.id === selection ? { ...o, [key]: val } : o)
-                }));
-            };
-
-            const saveToToolbox = async () => {
-                const obj = gameData.objects.find(o => o.id === selection);
-                if (!obj) return;
-                await db.collection('artifacts/blockverse/public/data/toolbox').add({
-                    ...obj,
-                    creator: profile.username,
-                    creatorId: user.uid
-                });
-                alert("Model saved to Global Toolbox!");
-            };
-
-            if (!user) return <AuthScreen />;
-
+        const AvatarPreview = ({ avatar }) => {
             return (
-                <div className="h-screen flex flex-col bg-[#020617] text-white overflow-hidden">
-                    {/* Header */}
-                    <header className="p-3 flex justify-between items-center glass border-b border-white/10 shrink-0">
-                        <h1 className="text-sm font-black italic tracking-tighter">BLOCK<span className="text-blue-500">STUDIO</span></h1>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-2 py-1 rounded-lg">{profile?.coins} ¢</span>
-                            <button className="bg-green-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase shadow-lg shadow-green-900/20">Play</button>
-                        </div>
-                    </header>
-
-                    {/* Main Workspace */}
-                    <div className="flex-1 flex overflow-hidden">
-                        {/* 2D Viewport & Explorer */}
-                        <div className="flex-1 flex flex-col relative overflow-hidden">
-                            {tab === 'STUDIO' ? (
-                                <>
-                                    <div className="flex-1 editor-grid relative overflow-hidden" id="viewport">
-                                        {gameData.objects.map(obj => (
-                                            <div 
-                                                key={obj.id} 
-                                                onClick={() => setSelection(obj.id)}
-                                                className={`absolute cursor-move border-2 ${selection === obj.id ? 'border-blue-500 z-10' : 'border-transparent'}`}
-                                                style={{ left: obj.x, top: obj.y, width: 40, height: 40 }}
-                                            >
-                                                <img src={obj.sprite} className="w-full h-full object-cover rounded-sm pointer-events-none" />
-                                                <span className="absolute -top-4 left-0 text-[8px] font-bold bg-black/50 px-1 truncate max-w-[40px]">{obj.name}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="h-1/3 glass border-t border-white/10 p-4 overflow-y-auto">
-                                        <h3 className="text-[10px] font-black text-slate-500 uppercase mb-2">Explorer</h3>
-                                        {gameData.objects.map(o => (
-                                            <div onClick={() => setSelection(o.id)} key={o.id} className={`p-2 rounded-lg text-xs mb-1 cursor-pointer ${selection === o.id ? 'bg-blue-600' : 'bg-white/5'}`}>
-                                                📦 {o.name}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            ) : tab === 'SHOP' ? (
-                                <Shop items={shopItems} profile={profile} user={user} />
-                            ) : (
-                                <Toolbox items={toolbox} onAdd={addObject} />
-                            )}
-                        </div>
-
-                        {/* Properties Panel (Right Side) */}
-                        {tab === 'STUDIO' && (
-                            <div className="w-64 glass border-l border-white/10 flex flex-col shrink-0">
-                                {selection ? (
-                                    <div className="p-4 flex flex-col h-full space-y-4">
-                                        <h3 className="text-[10px] font-black uppercase text-blue-400">Properties</h3>
-                                        <div className="space-y-2">
-                                            <label className="text-[8px] font-black text-slate-500 uppercase">Name</label>
-                                            <input className="w-full bg-white/5 p-2 rounded text-xs" value={gameData.objects.find(o => o.id === selection)?.name} onChange={e => updateSelected('name', e.target.value)} />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div className="space-y-2">
-                                                <label className="text-[8px] font-black text-slate-500 uppercase">Pos X</label>
-                                                <input className="w-full bg-white/5 p-2 rounded text-xs" type="number" value={gameData.objects.find(o => o.id === selection)?.x} onChange={e => updateSelected('x', parseInt(e.target.value))} />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[8px] font-black text-slate-500 uppercase">Pos Y</label>
-                                                <input className="w-full bg-white/5 p-2 rounded text-xs" type="number" value={gameData.objects.find(o => o.id === selection)?.y} onChange={e => updateSelected('y', parseInt(e.target.value))} />
-                                            </div>
-                                        </div>
-                                        <div className="flex-1 flex flex-col space-y-2">
-                                            <label className="text-[8px] font-black text-slate-500 uppercase">Lua Script</label>
-                                            <textarea className="flex-1 lua-editor p-2 rounded text-[10px]" value={gameData.objects.find(o => o.id === selection)?.script} onChange={e => updateSelected('script', e.target.value)} />
-                                        </div>
-                                        <button onClick={saveToToolbox} className="bg-blue-600 py-3 rounded-xl font-black text-[10px] uppercase">Publish to Toolbox</button>
-                                    </div>
-                                ) : (
-                                    <div className="p-10 text-center opacity-30 italic text-xs">Select an object to edit properties</div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Footer Nav */}
-                    <nav className="h-16 glass flex justify-around items-center border-t border-white/10 shrink-0 px-4">
-                        <button onClick={() => setTab('STUDIO')} className={`flex flex-col items-center ${tab === 'STUDIO' ? 'text-blue-500' : 'text-slate-500'}`}><span className="text-xl">🛠️</span><span className="text-[8px] font-black uppercase">Studio</span></button>
-                        <button onClick={() => addObject()} className="bg-blue-600 w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-xl shadow-blue-900/40 -translate-y-4 border-4 border-[#020617]">➕</button>
-                        <button onClick={() => setTab('TOOLBOX')} className={`flex flex-col items-center ${tab === 'TOOLBOX' ? 'text-blue-500' : 'text-slate-500'}`}><span className="text-xl">📦</span><span className="text-[8px] font-black uppercase">Toolbox</span></button>
-                        <button onClick={() => setTab('SHOP')} className={`flex flex-col items-center ${tab === 'SHOP' ? 'text-blue-500' : 'text-slate-500'}`}><span className="text-xl">👕</span><span className="text-[8px] font-black uppercase">Avatar</span></button>
-                    </nav>
-                </div>
-            );
-        }
-
-        const Toolbox = ({ items, onAdd }) => (
-            <div className="p-4 grid grid-cols-2 gap-4 h-full overflow-y-auto pb-20">
-                {items.map(i => (
-                    <div key={i.id} onClick={() => onAdd(i)} className="glass p-4 rounded-3xl flex flex-col items-center cursor-pointer border-dashed border-white/20 hover:border-blue-500 transition-all">
-                        <img src={i.sprite} className="w-12 h-12 object-cover rounded-lg mb-2" />
-                        <p className="text-[10px] font-black uppercase text-center mb-1">{i.name}</p>
-                        <p className="text-[8px] text-slate-500 font-bold uppercase">By {i.creator}</p>
-                    </div>
-                ))}
-            </div>
-        );
-
-        const Shop = ({ items, profile, user }) => {
-            const buy = async (item) => {
-                if (profile.coins < item.price) return alert("Not enough coins");
-                await db.collection('profiles').doc(user.uid).update({
-                    coins: profile.coins - item.price,
-                    inventory: firebase.firestore.FieldValue.arrayUnion({ url: item.url, type: item.type })
-                });
-            };
-            return (
-                <div className="p-4 grid grid-cols-2 gap-4 h-full overflow-y-auto pb-20">
-                    {items.map(i => (
-                        <div key={i.id} className="glass p-4 rounded-[2rem] flex flex-col items-center">
-                            <div className="relative w-full aspect-square mb-2">
-                                <img src={i.url} className="w-full h-full object-cover rounded-2xl" />
-                                <span className="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded-lg text-[8px] font-black">{i.price}¢</span>
-                            </div>
-                            <h4 className="text-[10px] font-black mb-3">{i.name}</h4>
-                            <button onClick={() => buy(i)} className="w-full py-2 bg-white text-black rounded-xl text-[10px] font-black uppercase">Buy</button>
-                        </div>
-                    ))}
+                <div className="relative w-48 h-64 bg-slate-800 rounded-xl border border-[#393b45] shadow-inner flex items-center justify-center shrink-0 overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTAgMGgyMHYyMEgwem0xMCAwaDEwdjEwSDEwem0wIDEwaDEwdjEwSDEwIiBmaWxsPSIjMWUxZjI2IiBmaWxsLW9wYWNpdHk9IjAuMSIgLz48L3N2Zz4=')] bg-[length:16px_16px]"></div>
+                    {/* Base Body SVG */}
+                    <svg viewBox="0 0 100 150" className="absolute w-full h-full z-0" fill="#cbd5e1">
+                        <rect x="35" y="20" width="30" height="30" rx="4" /> {/* Head */}
+                        <rect x="25" y="55" width="50" height="50" rx="2" /> {/* Torso */}
+                        <rect x="5" y="55" width="15" height="50" rx="2" />  {/* Left Arm */}
+                        <rect x="80" y="55" width="15" height="50" rx="2" /> {/* Right Arm */}
+                        <rect x="25" y="110" width="22" height="40" rx="2" /> {/* Left Leg */}
+                        <rect x="53" y="110" width="22" height="40" rx="2" /> {/* Right Leg */}
+                    </svg>
+                    
+                    {/* Item Layers */}
+                    {avatar?.face?.url && <img src={avatar.face.url} className="absolute w-full h-full object-contain z-10 pointer-events-none drop-shadow-sm" />}
+                    {avatar?.shirt?.url && <img src={avatar.shirt.url} className="absolute w-full h-full object-contain z-20 pointer-events-none drop-shadow-md" />}
+                    {avatar?.pants?.url && <img src={avatar.pants.url} className="absolute w-full h-full object-contain z-20 pointer-events-none drop-shadow-md" />}
+                    {avatar?.accessory?.url && <img src={avatar.accessory.url} className="absolute w-full h-full object-contain z-30 pointer-events-none drop-shadow-lg" />}
+                    {avatar?.hat?.url && <img src={avatar.hat.url} className="absolute w-full h-full object-contain z-40 pointer-events-none drop-shadow-xl" />}
                 </div>
             );
         };
+
+        const TopNav = ({ profile, setTab, tab, onLogout }) => (
+            <header className="bg-[#1b1c23] border-b border-[#393b45] px-6 py-3 flex justify-between items-center shrink-0 h-16 shadow-md z-10">
+                <div className="flex items-center gap-10">
+                    <h1 className="text-2xl font-black text-white tracking-tighter cursor-pointer" onClick={() => setTab('DISCOVER')}>BLOX<span className="text-blue-500">VERSE</span></h1>
+                    <nav className="flex gap-8">
+                        {['DISCOVER', 'AVATAR', 'SHOP', 'CREATE'].map(t => (
+                            <button key={t} onClick={() => setTab(t)} className={`font-bold text-[13px] tracking-wide transition-all ${tab === t ? 'text-white border-b-2 border-white pb-1' : 'text-slate-400 hover:text-white'}`}>
+                                {t.charAt(0) + t.slice(1).toLowerCase()}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2 bg-[#111216] px-4 py-1.5 rounded-lg border border-[#393b45] shadow-inner">
+                        <span className="text-green-500 font-black text-sm">¢</span>
+                        <span className="font-bold text-sm text-white tracking-wide">{profile.coins?.toLocaleString() || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <span className="font-bold text-sm text-slate-300">{profile.username}</span>
+                        <button onClick={onLogout} className="text-[11px] font-bold text-slate-500 hover:text-white uppercase tracking-wider bg-[#23252d] px-3 py-1.5 rounded border border-[#393b45] transition-colors">Logout</button>
+                    </div>
+                </div>
+            </header>
+        );
 
         const AuthScreen = () => {
-            const [m, setM] = useState('SIGNUP');
-            const [e, setE] = useState('');
-            const [p, setP] = useState('');
-            const [u, setU] = useState('');
-            const [err, setErr] = useState('');
+            const [isLogin, setIsLogin] = useState(true);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [username, setUsername] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
 
-            const act = async () => {
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
                 try {
-                    if (m === 'SIGNUP') {
-                        const c = await auth.createUserWithEmailAndPassword(e, p);
-                        await db.collection('profiles').doc(c.user.uid).set({ 
-                            username: u, coins: u === 'Bloxverse' ? 1000000 : 500, isAdmin: u === 'Bloxverse', inventory: [] 
+                    if (isLogin) {
+                        await auth.signInWithEmailAndPassword(email, password);
+                    } else {
+                        const res = await auth.createUserWithEmailAndPassword(email, password);
+                        await db.collection('profiles').doc(res.user.uid).set({
+                            username,
+                            coins: 500,
+                            inventory: [],
+                            avatar: { face: null, shirt: null, pants: null, hat: null, accessory: null }
                         });
-                    } else await auth.signInWithEmailAndPassword(e, p);
-                } catch(x) { setErr(x.message.toUpperCase()); }
+                    }
+                } catch (err) {
+                    setError(err.message);
+                }
+                setLoading(false);
             };
 
             return (
-                <div className="h-screen flex items-center justify-center p-6 bg-[#020617]">
-                    <div className="glass p-10 rounded-[3rem] w-full max-w-sm border border-white/5">
-                        <h1 className="text-4xl font-black italic mb-2 text-center tracking-tighter">BLOCK<span className="text-blue-500">STUDIO</span></h1>
-                        <p className="text-[10px] text-slate-500 font-bold text-center mb-8 uppercase tracking-widest">Protocol v3.0</p>
-                        <div className="space-y-3">
-                            {m==='SIGNUP' && <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold border border-white/5 outline-none focus:border-blue-500" placeholder="USERNAME" onChange={x=>setU(x.target.value)}/>}
-                            <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold border border-white/5 outline-none focus:border-blue-500" placeholder="EMAIL" onChange={x=>setE(x.target.value)}/>
-                            <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold border border-white/5 outline-none focus:border-blue-500" type="password" placeholder="PASSWORD" onChange={x=>setP(x.target.value)}/>
-                            {err && <p className="text-red-400 text-[8px] font-black text-center">{err}</p>}
-                            <button onClick={act} className="w-full bg-blue-600 p-5 rounded-2xl font-black shadow-xl shadow-blue-900/40">INITIALIZE</button>
-                            <button onClick={()=>setM(m==='LOGIN'?'SIGNUP':'LOGIN')} className="w-full text-slate-500 text-[8px] font-black uppercase text-center mt-4 tracking-widest">{m==='LOGIN'?'No Account? Sign Up':'Have Account? Login'}</button>
+                <div className="h-screen bg-[#111216] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTAgMGgyMHYyMEgwem0xMCAwaDEwdjEwSDEwem0wIDEwaDEwdjEwSDEwIiBmaWxsPSIjMWUxZjI2IiBmaWxsLW9wYWNpdHk9IjAuNSIgLz48L3N2Zz4=')] bg-[length:24px_24px] z-0"></div>
+                    <div className="absolute w-[800px] h-[800px] bg-blue-600/10 rounded-full blur-[120px] -top-96 -left-96 pointer-events-none"></div>
+                    
+                    <div className="bg-[#1b1c23] p-10 rounded-2xl shadow-2xl w-full max-w-md border border-[#393b45] z-10 backdrop-blur-sm">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-black text-white tracking-tighter italic">BLOX<span className="text-blue-500">VERSE</span></h1>
+                            <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">2D Experience</p>
                         </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
-
-            };
-
-            if (!user) return <AuthScreen config={firebaseConfig} />;
-
-            return (
-                <div className="min-h-screen flex flex-col pb-24">
-                    {/* Header */}
-                    <header className="p-6 flex justify-between items-center bg-slate-950/50 sticky top-0 z-50 glass">
-                        <div>
-                            <h1 className="text-xl font-black italic tracking-tighter">BLOCK<span className="text-blue-500">VERSE</span></h1>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase">{tab}</p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <div className="bg-blue-600/20 px-3 py-1 rounded-full border border-blue-500/30 text-xs font-black text-blue-400">
-                                {profile?.coins.toLocaleString()} ¢
-                            </div>
-                        </div>
-                    </header>
-
-                    {/* Navigation Tabs */}
-                    <nav className="fixed bottom-0 left-0 right-0 h-20 bg-slate-950 border-t border-white/10 flex justify-around items-center z-50 glass px-4">
-                        <NavBtn active={tab==='HOME'} icon="🏠" label="Home" onClick={()=>setTab('HOME')} />
-                        <NavBtn active={tab==='SHOP'} icon="👕" label="Shop" onClick={()=>setTab('SHOP')} />
-                        <NavBtn active={tab==='CREATE'} icon="➕" label="Create" onClick={()=>setTab('CREATE')} />
-                    </nav>
-
-                    <main className="p-6">
-                        {tab === 'HOME' && <HomeView profile={profile} games={games} items={items} />}
-                        {tab === 'SHOP' && <ShopView items={items} profile={profile} user={user} db={db} />}
-                        {tab === 'CREATE' && <CreateView onUploadClothing={uploadClothing} onUploadGame={uploadGame} loading={loading} profile={profile} />}
-                    </main>
-                </div>
-            );
-        }
-
-        // --- SUB-COMPONENTS ---
-
-        const NavBtn = ({active, icon, label, onClick}) => (
-            <button onClick={onClick} className={`flex flex-col items-center justify-center gap-1 transition-all ${active ? 'text-blue-500 scale-110' : 'text-slate-500 opacity-60'}`}>
-                <span className="text-xl">{icon}</span>
-                <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-            </button>
-        );
-
-        const HomeView = ({profile, games, items}) => (
-            <div className="space-y-8 animate-in fade-in duration-500">
-                <section>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">New Games</h3>
-                    <div className="flex gap-4 overflow-x-auto pb-4 scroll-hide">
-                        {games.map(g => (
-                            <div key={g.id} className="min-w-[140px] glass p-4 rounded-3xl card-hover">
-                                <div className="aspect-square bg-slate-800 rounded-2xl mb-3 flex items-center justify-center text-3xl italic font-black text-white/10">GAME</div>
-                                <p className="font-black text-sm truncate">{g.name}</p>
-                                <p className="text-[8px] text-slate-500 uppercase font-bold">By {g.creator}</p>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                <section>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Global Creators</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        {items.slice(0,4).map(i => (
-                            <div key={i.id} className="glass p-3 rounded-2xl flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-xs">👤</div>
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            {!isLogin && (
                                 <div>
-                                    <p className="text-[10px] font-black truncate">{i.creator}</p>
-                                    <p className="text-[8px] text-blue-400 font-bold uppercase">Designer</p>
+                                    <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-widest">Username</label>
+                                    <input required value={username} onChange={e=>setUsername(e.target.value)} className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" placeholder="Your display name" />
                                 </div>
+                            )}
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-widest">Email</label>
+                                <input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" placeholder="you@example.com" />
                             </div>
-                        ))}
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-widest">Password</label>
+                                <input type="password" required value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" placeholder="••••••••" />
+                            </div>
+                            {error && <div className="bg-red-900/20 border border-red-900/50 p-3 rounded-xl"><p className="text-red-400 text-xs font-bold text-center">{error}</p></div>}
+                            <button disabled={loading} type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98] uppercase tracking-widest text-xs">
+                                {loading ? 'Processing...' : (isLogin ? 'Log In' : 'Sign Up')}
+                            </button>
+                        </form>
+                        <button onClick={() => {setIsLogin(!isLogin); setError('');}} className="w-full text-center text-xs font-bold text-slate-500 mt-6 hover:text-white transition-colors">
+                            {isLogin ? "Need an account? Sign Up" : "Already have an account? Log In"}
+                        </button>
                     </div>
-                </section>
-            </div>
-        );
-
-        const ShopView = ({items, profile, user, db}) => {
-            const buy = async (item) => {
-                if (profile.coins < item.price) return alert("Not enough coins!");
-                await db.collection('profiles').doc(user.uid).update({
-                    coins: profile.coins - item.price,
-                    inventory: firebase.firestore.FieldValue.arrayUnion(item.url)
-                });
-                alert("Purchased!");
-            };
-
-            return (
-                <div className="grid grid-cols-2 gap-4">
-                    {items.map(i => (
-                        <div key={i.id} className="glass p-4 rounded-[2rem] flex flex-col items-center">
-                            <div className="w-full aspect-square rounded-2xl bg-white/5 mb-3 overflow-hidden border border-white/5 relative">
-                                <img src={i.url} className="w-full h-full object-cover" alt="item" />
-                                <div className="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded-lg text-[8px] font-black">{i.price} ¢</div>
-                            </div>
-                            <h4 className="font-black text-xs text-center mb-1">{i.name}</h4>
-                            <p className="text-[8px] text-slate-500 mb-3 font-bold uppercase tracking-tighter">By {i.creator}</p>
-                            <button onClick={()=>buy(i)} className="w-full py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Buy</button>
-                        </div>
-                    ))}
                 </div>
             );
         };
 
-        const CreateView = ({onUploadClothing, onUploadGame, loading, profile}) => {
-            const [mode, setMode] = useState('CLOTHING');
-            const [url, setUrl] = useState('');
-            const [name, setName] = useState('');
-            const [price, setPrice] = useState(50);
-            const [lua, setLua] = useState('-- Sample Lua\nfunction onStart()\n  print("Hello World")\nend');
+        const DiscoverTab = ({ onPlay }) => {
+            const [games, setGames] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const unsub = db.collection('games').orderBy('createdAt', 'desc').onSnapshot(s => {
+                    setGames(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setLoading(false);
+                });
+                return unsub;
+            }, []);
 
             return (
-                <div className="space-y-6">
-                    <div className="flex gap-2">
-                        <button onClick={()=>setMode('CLOTHING')} className={`flex-1 py-3 rounded-2xl font-black text-xs ${mode==='CLOTHING' ? 'bg-blue-600' : 'bg-white/5'}`}>CLOTHING</button>
-                        <button onClick={()=>setMode('GAME')} className={`flex-1 py-3 rounded-2xl font-black text-xs ${mode==='GAME' ? 'bg-blue-600' : 'bg-white/5'}`}>GAME MAKER</button>
+                <div className="max-w-7xl mx-auto h-full flex flex-col">
+                    <div className="mb-8 shrink-0">
+                        <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Discover</h2>
+                        <p className="text-slate-400 text-sm font-bold">Play millions of 2D experiences created by the community.</p>
                     </div>
-
-                    {mode === 'CLOTHING' ? (
-                        <div className="glass p-6 rounded-[2rem] space-y-4">
-                            <h3 className="font-black italic">UPLOAD DESIGN</h3>
-                            <input className="w-full p-4 bg-white/5 rounded-xl border border-white/5 text-xs font-bold" placeholder="Asset URL (imgur/discord link)" value={url} onChange={e=>setUrl(e.target.value)} />
-                            <input className="w-full p-4 bg-white/5 rounded-xl border border-white/5 text-xs font-bold" placeholder="Item Name" value={name} onChange={e=>setName(e.target.value)} />
-                            <input className="w-full p-4 bg-white/5 rounded-xl border border-white/5 text-xs font-bold" type="number" placeholder="Set Price (¢)" value={price} onChange={e=>setPrice(e.target.value)} />
-                            <div className="bg-blue-500/10 p-4 rounded-xl text-[10px] font-bold text-blue-400">
-                                ⚡ LISTING COST: {profile?.isAdmin ? 'FREE' : '200 COINS'}
-                            </div>
-                            <button disabled={loading} onClick={()=>onUploadClothing(url, price, name)} className="w-full bg-blue-600 p-4 rounded-xl font-black uppercase tracking-widest">{loading ? 'UPLOADING...' : 'POST TO SHOP'}</button>
-                        </div>
+                    {loading ? (
+                        <div className="flex-1 flex items-center justify-center"><p className="text-slate-500 font-bold animate-pulse">Loading experiences...</p></div>
                     ) : (
-                        <div className="glass p-6 rounded-[2rem] space-y-4">
-                            <h3 className="font-black italic">BLOCKLUA STUDIO</h3>
-                            <input className="w-full p-4 bg-white/5 rounded-xl border border-white/5 text-xs font-bold" placeholder="Game Name" value={name} onChange={e=>setName(e.target.value)} />
-                            <textarea className="w-full h-48 lua-editor p-4 rounded-xl border border-white/10 text-xs font-bold" value={lua} onChange={e=>setLua(e.target.value)} />
-                            <button disabled={loading} onClick={()=>onUploadGame(name, lua)} className="w-full bg-blue-600 p-4 rounded-xl font-black uppercase tracking-widest">PUBLISH GAME</button>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 auto-rows-max overflow-y-auto pb-20 pr-2 hide-scroll">
+                            {games.map(game => (
+                                <div key={game.id} onClick={() => onPlay(game)} className="bg-[#1b1c23] border border-[#393b45] rounded-2xl overflow-hidden cursor-pointer hover:-translate-y-1 hover:border-slate-400 hover:shadow-xl hover:shadow-black/50 transition-all duration-200 group flex flex-col">
+                                    <div className="aspect-square bg-slate-800 flex items-center justify-center relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-[#1b1c23] to-transparent z-10"></div>
+                                        <span className="text-6xl z-0 group-hover:scale-110 transition-transform duration-300 drop-shadow-lg">🎮</span>
+                                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur px-2.5 py-1 rounded-md z-20 flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                            <span className="text-[10px] font-black text-white">PLAY</span>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 flex-1 flex flex-col relative z-20 -mt-8 bg-[#1b1c23] rounded-t-2xl">
+                                        <h3 className="text-[15px] font-black text-white truncate mb-1" title={game.name}>{game.name}</h3>
+                                        <p className="text-[11px] font-bold text-slate-400 truncate mb-3">By {game.creator}</p>
+                                        <div className="mt-auto flex items-center justify-between border-t border-[#393b45] pt-3">
+                                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
+                                                <span className="text-slate-500">▶️</span>
+                                                <span>{game.visits || 0}</span>
+                                            </div>
+                                            <button className="bg-white text-black px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Play</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
             );
         };
 
-        const AuthScreen = ({config}) => {
-            const [m, setM] = useState('LOGIN');
-            const [e, setE] = useState('');
-            const [p, setP] = useState('');
-            const [u, setU] = useState('');
-            const [err, setErr] = useState('');
+        const AvatarTab = ({ profile, user }) => {
+            const [inventory, setInventory] = useState([]);
+            const [avatar, setAvatar] = useState(profile.avatar || {});
+            const [category, setCategory] = useState('All');
+            const [loading, setLoading] = useState(true);
 
-            const act = async () => {
-                try {
-                    if (m === 'SIGNUP') {
-                        const c = await auth.createUserWithEmailAndPassword(e, p);
-                        const isAdm = u === 'Bloxverse';
-                        await db.collection('profiles').doc(c.user.uid).set({ 
-                            username: u, coins: isAdm ? 1000000 : 500, isAdmin: isAdm, inventory: [] 
-                        });
-                    } else await auth.signInWithEmailAndPassword(e, p);
-                } catch(x) { setErr(x.message); }
+            useEffect(() => {
+                if (!profile.inventory || profile.inventory.length === 0) {
+                    setLoading(false);
+                    return;
+                }
+                const fetchInv = async () => {
+                    const shopSnapshot = await db.collection('shop').get();
+                    const allShopItems = shopSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const userItems = allShopItems.filter(item => profile.inventory.includes(item.id));
+                    setInventory(userItems);
+                    setLoading(false);
+                };
+                fetchInv();
+            }, [profile.inventory]);
+
+            const toggleEquip = async (item) => {
+                const typeKey = item.type.toLowerCase(); // 'hat', 'shirt', 'pants', 'face', 'accessory'
+                const newAvatar = { ...avatar };
+                
+                if (newAvatar[typeKey]?.id === item.id) {
+                    delete newAvatar[typeKey]; // Unequip
+                } else {
+                    newAvatar[typeKey] = { id: item.id, url: item.url }; // Equip
+                }
+                
+                setAvatar(newAvatar);
+                await db.collection('profiles').doc(user.uid).update({ avatar: newAvatar });
             };
 
+            const categories = ['All', 'Hat', 'Shirt', 'Pants', 'Face', 'Accessory'];
+            const filteredInv = category === 'All' ? inventory : inventory.filter(i => i.type === category);
+
             return (
-                <div className="h-screen flex items-center justify-center p-6 bg-slate-950">
-                    <div className="glass p-8 rounded-[2.5rem] w-full max-w-sm border border-white/10">
-                        <h1 className="text-3xl font-black italic mb-8 text-center">BLOCK<span className="text-blue-500">VERSE</span></h1>
-                        <div className="space-y-3">
-                            {m==='SIGNUP' && <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold" placeholder="Username" onChange={x=>setU(x.target.value)}/>}
-                            <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold" placeholder="Email" onChange={x=>setE(x.target.value)}/>
-                            <input className="w-full p-4 bg-white/5 rounded-2xl text-xs font-bold" type="password" placeholder="Password" onChange={x=>setP(x.target.value)}/>
-                            {err && <p className="text-red-400 text-[8px] uppercase font-black text-center">{err}</p>}
-                            <button onClick={act} className="w-full bg-blue-600 p-5 rounded-2xl font-black shadow-lg">CONTINUE</button>
-                            <button onClick={()=>setM(m==='LOGIN'?'SIGNUP':'LOGIN')} className="w-full text-slate-500 text-[8px] font-black uppercase">{m==='LOGIN'?'Register Account':'Back to Login'}</button>
+                <div className="max-w-6xl mx-auto h-full flex gap-8">
+                    {/* Left Column: Avatar Preview */}
+                    <div className="w-72 shrink-0 flex flex-col gap-6">
+                        <div className="bg-[#1b1c23] p-6 rounded-2xl border border-[#393b45] shadow-lg flex flex-col items-center relative overflow-hidden">
+                            <div className="absolute top-0 w-full h-32 bg-gradient-to-b from-blue-600/20 to-transparent"></div>
+                            <h2 className="text-lg font-black text-white mb-6 tracking-tight relative z-10 w-full text-center">Avatar Editor</h2>
+                            <div className="relative z-10">
+                                <AvatarPreview avatar={avatar} />
+                            </div>
+                            <div className="mt-6 w-full grid grid-cols-2 gap-2 text-center">
+                                <div className="bg-[#111216] p-2 rounded-lg border border-[#393b45]">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase">Items Owned</p>
+                                    <p className="text-sm font-bold text-white mt-1">{inventory.length}</p>
+                                </div>
+                                <div className="bg-[#111216] p-2 rounded-lg border border-[#393b45]">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase">Equipped</p>
+                                    <p className="text-sm font-bold text-white mt-1">{Object.keys(avatar).length}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Column: Inventory Grid */}
+                    <div className="flex-1 bg-[#1b1c23] rounded-2xl border border-[#393b45] flex flex-col overflow-hidden shadow-lg">
+                        <div className="flex border-b border-[#393b45] bg-[#111216] overflow-x-auto hide-scroll shrink-0">
+                            {categories.map(c => (
+                                <button key={c} onClick={() => setCategory(c)} className={`px-6 py-4 text-xs font-black uppercase tracking-widest whitespace-nowrap transition-colors relative ${category === c ? 'text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
+                                    {c}
+                                    {category === c && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1 hide-scroll">
+                            {loading ? (
+                                <div className="flex h-full items-center justify-center"><p className="text-slate-500 font-bold animate-pulse">Loading inventory...</p></div>
+                            ) : (
+                                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 auto-rows-max">
+                                    {filteredInv.map(item => {
+                                        const isEquipped = avatar[item.type.toLowerCase()]?.id === item.id;
+                                        return (
+                                            <div key={item.id} onClick={() => toggleEquip(item)} className={`relative bg-[#111216] rounded-xl p-3 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-black/50 group flex flex-col border-2 ${isEquipped ? 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-[#393b45] hover:border-slate-500'}`}>
+                                                {isEquipped && <div className="absolute -top-2 -right-2 bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded-md shadow-lg z-20 tracking-wider uppercase">Equipped</div>}
+                                                <div className="aspect-square bg-slate-800 rounded-lg mb-3 overflow-hidden flex items-center justify-center relative shadow-inner">
+                                                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwYXRoIGQ9Ik0wIDBoOHY4SDB6bTQgMGg0djRINFptMCA0aDR2NEg0IiBmaWxsPSIjMWUxZjI2IiBmaWxsLW9wYWNpdHk9IjAuNSIgLz48L3N2Zz4=')] bg-[length:8px_8px] z-0"></div>
+                                                    <img src={item.url} className="w-[80%] h-[80%] object-contain relative z-10 group-hover:scale-110 transition-transform duration-300 drop-shadow-md" />
+                                                </div>
+                                                <p className="text-xs text-white font-bold truncate text-center mt-auto" title={item.name}>{item.name}</p>
+                                            </div>
+                                        )
+                                    })}
+                                    {filteredInv.length === 0 && <div className="col-span-full h-64 flex flex-col items-center justify-center text-slate-500"><span className="text-4xl mb-4">👕</span><p className="text-sm font-bold">No {category !== 'All' ? category.toLowerCase() + 's' : 'items'} found.</p><button onClick={() => document.querySelector('nav button:nth-child(3)').click()} className="mt-4 text-blue-400 text-xs font-bold hover:underline">Browse the Shop</button></div>}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
             );
         };
 
+        const ShopTab = ({ profile, user }) => {
+            const [items, setItems] = useState([]);
+            const [category, setCategory] = useState('All');
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const unsub = db.collection('shop').orderBy('createdAt', 'desc').onSnapshot(s => {
+                    setItems(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setLoading(false);
+                });
+                return unsub;
+            }, []);
+
+            const buyItem = async (item) => {
+                if (profile.inventory?.includes(item.id)) return alert("You already own this item.");
+                if (profile.coins < item.price) return alert("Not enough coins! Sell items or create games to earn more.");
+                
+                const confirmBuy = window.confirm(`Purchase ${item.name} for ${item.price} coins?`);
+                if (!confirmBuy) return;
+
+                try {
+                    await db.collection('profiles').doc(user.uid).update({
+                        coins: firebase.firestore.FieldValue.increment(-item.price),
+                        inventory: firebase.firestore.FieldValue.arrayUnion(item.id)
+                    });
+                    alert("Item purchased successfully! You can equip it in the Avatar tab.");
+                } catch (err) {
+                    alert("Purchase failed: " + err.message);
+                }
+            };
+
+            const categories = ['All', 'Hat', 'Shirt', 'Pants', 'Face', 'Accessory'];
+            const filteredItems = category === 'All' ? items : items.filter(i => i.type === category);
+
+            return (
+                <div className="max-w-7xl mx-auto h-full flex flex-col bg-[#1b1c23] rounded-2xl border border-[#393b45] overflow-hidden shadow-xl">
+                    <div className="flex border-b border-[#393b45] bg-[#111216] px-2 shrink-0 overflow-x-auto hide-scroll">
+                        {categories.map(c => (
+                            <button key={c} onClick={() => setCategory(c)} className={`px-6 py-5 text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-colors relative ${category === c ? 'text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
+                                {c}
+                                {category === c && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="p-8 overflow-y-auto flex-1 hide-scroll relative">
+                        {loading ? (
+                            <div className="flex h-full items-center justify-center"><p className="text-slate-500 font-bold animate-pulse">Loading catalog...</p></div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 auto-rows-max pb-20">
+                                {filteredItems.map(item => {
+                                    const owns = profile.inventory?.includes(item.id);
+                                    const cantAfford = !owns && profile.coins < item.price;
+                                    return (
+                                        <div key={item.id} className="bg-[#111216] border border-[#393b45] rounded-2xl overflow-hidden flex flex-col group hover:-translate-y-1 hover:border-slate-400 hover:shadow-xl hover:shadow-black/50 transition-all duration-200">
+                                            <div className="aspect-square bg-slate-800 p-4 relative flex items-center justify-center shadow-inner">
+                                                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwYXRoIGQ9Ik0wIDBoOHY4SDB6bTQgMGg0djRINFptMCA0aDR2NEg0IiBmaWxsPSIjMWUxZjI2IiBmaWxsLW9wYWNpdHk9IjAuNSIgLz48L3N2Zz4=')] bg-[length:8px_8px] z-0"></div>
+                                                <img src={item.url} className="w-full h-full object-contain relative z-10 group-hover:scale-110 transition-transform duration-300 drop-shadow-lg" />
+                                                {owns && <div className="absolute top-3 right-3 bg-slate-900/80 backdrop-blur border border-[#393b45] text-slate-300 text-[9px] font-black px-2 py-1 rounded-md z-20 tracking-wider shadow-lg">OWNED</div>}
+                                            </div>
+                                            <div className="p-4 flex-1 flex flex-col">
+                                                <h3 className="text-[13px] font-black text-white truncate mb-1" title={item.name}>{item.name}</h3>
+                                                <p className="text-[10px] font-bold text-slate-500 mb-4 truncate uppercase tracking-wider">By {item.creator}</p>
+                                                <div className="mt-auto flex items-center justify-between">
+                                                    <div className={`flex items-center gap-1.5 font-black text-sm ${cantAfford ? 'text-red-400' : 'text-green-500'}`}>
+                                                        <span>¢</span>
+                                                        <span>{item.price}</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => buyItem(item)} 
+                                                        disabled={owns || cantAfford}
+                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${owns ? 'bg-[#23252d] text-slate-500 border border-[#393b45] cursor-not-allowed' : cantAfford ? 'bg-red-900/20 text-red-500 border border-red-900/50 cursor-not-allowed' : 'bg-white text-black hover:bg-slate-200 active:scale-95 shadow-md'}`}
+                                                    >
+                                                        {owns ? 'Owned' : 'Buy'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {filteredItems.length === 0 && <div className="col-span-full h-64 flex flex-col items-center justify-center text-slate-500"><span className="text-4xl mb-4">🛒</span><p className="text-sm font-bold">No items found in this category.</p></div>}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const CreateTab = ({ profile, user }) => {
+            const [subTab, setSubTab] = useState('ITEM'); // ITEM, GAME
+            const [name, setName] = useState('');
+            const [type, setType] = useState('Shirt');
+            const [url, setUrl] = useState('');
+            const [price, setPrice] = useState(10);
+            const [loading, setLoading] = useState(false);
+
+            const [gameName, setGameName] = useState('');
+            const [gameDesc, setGameDesc] = useState('');
+
+            const handleCreateItem = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    await db.collection('shop').add({
+                        name,
+                        type,
+                        url,
+                        price: parseInt(price) || 0,
+                        creator: profile.username,
+                        creatorId: user.uid,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    alert("Item successfully published to the Avatar Shop!");
+                    setName(''); setUrl(''); setPrice(10);
+                } catch (err) {
+                    alert(err.message);
+                }
+                setLoading(false);
+            };
+
+            const handleCreateGame = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    await db.collection('games').add({
+                        name: gameName,
+                        description: gameDesc,
+                        creator: profile.username,
+                        creatorId: user.uid,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        objects: [],
+                        visits: 0
+                    });
+                    alert("Game created! Go to Discover to play and build it in Edit Mode.");
+                    setGameName(''); setGameDesc('');
+                } catch (err) {
+                    alert(err.message);
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center pb-20">
+                    <div className="bg-[#1b1c23] border border-[#393b45] rounded-3xl overflow-hidden shadow-2xl w-full">
+                        <div className="flex border-b border-[#393b45] bg-[#111216]">
+                            <button onClick={() => setSubTab('ITEM')} className={`flex-1 py-5 text-xs font-black uppercase tracking-widest transition-colors relative ${subTab === 'ITEM' ? 'text-white bg-[#1b1c23]' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
+                                Create Avatar Item
+                                {subTab === 'ITEM' && <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>}
+                            </button>
+                            <button onClick={() => setSubTab('GAME')} className={`flex-1 py-5 text-xs font-black uppercase tracking-widest transition-colors relative ${subTab === 'GAME' ? 'text-white bg-[#1b1c23]' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
+                                Create Experience
+                                {subTab === 'GAME' && <div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div>}
+                            </button>
+                        </div>
+                        
+                        <div className="p-10">
+                            {subTab === 'ITEM' ? (
+                                <form onSubmit={handleCreateItem} className="space-y-6 max-w-lg mx-auto">
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-2xl font-black text-white tracking-tight">Design Clothing & Assets</h2>
+                                        <p className="text-xs font-bold text-slate-500 mt-2">Publish your creations to the Avatar Shop and earn coins.</p>
+                                    </div>
+                                    <div className="bg-blue-900/10 border border-blue-900/30 p-4 rounded-xl flex gap-4 items-start shadow-inner">
+                                        <span className="text-xl">💡</span>
+                                        <div>
+                                            <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">Asset Guidelines</p>
+                                            <p className="text-xs font-medium text-slate-400 leading-relaxed">Provide a direct image URL (e.g., Imgur). Images must have transparent backgrounds to layer correctly on the 2D avatar base.</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="col-span-2">
+                                            <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Item Name</label>
+                                            <input required value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Vintage Denim Jacket" className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Asset Type</label>
+                                            <select value={type} onChange={e=>setType(e.target.value)} className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner appearance-none">
+                                                <option value="Hat">Hat</option>
+                                                <option value="Shirt">Shirt</option>
+                                                <option value="Pants">Pants</option>
+                                                <option value="Face">Face</option>
+                                                <option value="Accessory">Accessory</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Price (Coins)</label>
+                                            <input required type="number" min="0" max="99999" value={price} onChange={e=>setPrice(e.target.value)} className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Image URL</label>
+                                            <input required type="url" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://i.imgur.com/yourimage.png" className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors shadow-inner" />
+                                        </div>
+                                    </div>
+                                    <button disabled={loading} type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl transition-all mt-8 uppercase tracking-widest text-xs shadow-lg shadow-blue-900/20 active:scale-[0.98]">
+                                        {loading ? 'Publishing...' : 'Publish to Shop'}
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleCreateGame} className="space-y-6 max-w-lg mx-auto">
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-2xl font-black text-white tracking-tight">Create 2D Experience</h2>
+                                        <p className="text-xs font-bold text-slate-500 mt-2">Build a new world. Edit it instantly by playing it.</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Experience Title</label>
+                                        <input required value={gameName} onChange={e=>setGameName(e.target.value)} placeholder="e.g. Escape the 2D Obby!" className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-green-500 transition-colors shadow-inner" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Description</label>
+                                        <textarea value={gameDesc} onChange={e=>setGameDesc(e.target.value)} placeholder="Tell players what this experience is about..." rows="4" className="w-full bg-[#111216] text-white border border-[#393b45] rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:border-green-500 transition-colors shadow-inner resize-none"></textarea>
+                                    </div>
+                                    <button disabled={loading} type="submit" className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl transition-all mt-8 uppercase tracking-widest text-xs shadow-lg shadow-green-900/20 active:scale-[0.98]">
+                                        {loading ? 'Creating...' : 'Create Experience'}
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const GameClient = ({ game, onExit, profile }) => {
+            const isCreator = game.creator === profile.username;
+            const [playerPos, setPlayerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+            const [objects, setObjects] = useState(game.objects || []);
+            const [isEditMode, setIsEditMode] = useState(false);
+            const [saving, setSaving] = useState(false);
+
+            useEffect(() => {
+                // Increment visits silently
+                db.collection('games').doc(game.id).update({ visits: firebase.firestore.FieldValue.increment(1) }).catch(()=>{});
+            }, [game.id]);
+
+            // Simple Physics & Movement
+            useEffect(() => {
+                if (isEditMode) return;
+                
+                const keys = {};
+                let animationFrameId;
+                const speed = 5;
+
+                const handleKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+                const handleKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+
+                window.addEventListener('keydown', handleKeyDown);
+                window.addEventListener('keyup', handleKeyUp);
+
+                const update = () => {
+                    setPlayerPos(prev => {
+                        let nx = prev.x;
+                        let ny = prev.y;
+                        if (keys['arrowup'] || keys['w']) ny -= speed;
+                        if (keys['arrowdown'] || keys['s']) ny += speed;
+                        if (keys['arrowleft'] || keys['a']) nx -= speed;
+                        if (keys['arrowright'] || keys['d']) nx += speed;
+
+                        // Basic collision with window bounds
+                        nx = Math.max(24, Math.min(window.innerWidth - 24, nx));
+                        ny = Math.max(32 + 64, Math.min(window.innerHeight - 32, ny)); // 64 is top bar height
+
+                        return { x: nx, y: ny };
+                    });
+                    animationFrameId = requestAnimationFrame(update);
+                };
+
+                update();
+
+                return () => {
+                    window.removeEventListener('keydown', handleKeyDown);
+                    window.removeEventListener('keyup', handleKeyUp);
+                    cancelAnimationFrame(animationFrameId);
+                };
+            }, [isEditMode]);
+
+            const saveMap = async () => {
+                setSaving(true);
+                try {
+                    await db.collection('games').doc(game.id).update({ objects });
+                    // alert("Experience saved successfully!");
+                } catch(e) { alert(e.message); }
+                setSaving(false);
+            };
+
+            const addBlock = () => {
+                setObjects([...objects, { id: Date.now(), x: window.innerWidth/2, y: window.innerHeight/2, w: 100, h: 20, color: '#3b82f6', type: 'solid' }]);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-[#0f172a] z-50 flex flex-col overflow-hidden">
+                    {/* Game World Background Grid */}
+                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgwek0yMCAwaDIwdjIwSDIwek0wIDIwaDIwdjIwSDB6IiBmaWxsPSIjMWUxZjI2IiBmaWxsLW9wYWNpdHk9IjAuNSIgLz48L3N2Zz4=')] bg-[length:40px_40px] z-0 pointer-events-none"></div>
+
+                    {/* Game HUD / Header */}
+                    <header className="h-16 bg-[#1b1c23]/90 backdrop-blur-md border-b border-[#393b45] flex items-center justify-between px-6 shrink-0 text-white z-50 shadow-md">
+                        <div className="flex items-center gap-6">
+                            <button onClick={onExit} className="w-10 h-10 bg-[#111216] border border-[#393b45] rounded-xl flex items-center justify-center hover:bg-white hover:text-black transition-colors shadow-inner group">
+                                <span className="text-xl font-bold group-hover:-translate-x-1 transition-transform">←</span>
+                            </button>
+                            <div>
+                                <h2 className="text-base font-black tracking-tight">{game.name}</h2>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">By {game.creator}</p>
+                            </div>
+                        </div>
+                        {isCreator && (
+                            <div className="flex gap-3 bg-[#111216] p-1.5 rounded-xl border border-[#393b45] shadow-inner">
+                                <button onClick={() => setIsEditMode(!isEditMode)} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-md ${isEditMode ? 'bg-blue-600 text-white' : 'bg-[#23252d] text-slate-400 hover:text-white border border-[#393b45]'}`}>
+                                    {isEditMode ? 'Play Mode' : 'Studio Mode'}
+                                </button>
+                                {isEditMode && (
+                                    <>
+                                        <div className="w-px bg-[#393b45] my-1"></div>
+                                        <button onClick={addBlock} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors shadow-md">Add Part</button>
+                                        <button onClick={saveMap} disabled={saving} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors shadow-md">{saving ? 'Saving...' : 'Save'}</button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </header>
+                    
+                    {/* Game Client Viewport */}
+                    <main className="flex-1 relative overflow-hidden z-10">
+                        
+                        {/* Render Objects (Parts) */}
+                        {objects.map((obj, i) => (
+                            <div 
+                                key={obj.id} 
+                                style={{ left: obj.x, top: obj.y, width: obj.w, height: obj.h, backgroundColor: obj.color }}
+                                className={`absolute rounded-sm shadow-lg shadow-black/50 ${isEditMode ? 'cursor-move ring-2 ring-white/50 ring-offset-2 ring-offset-[#0f172a]' : ''}`}
+                                onMouseDown={(e) => {
+                                    if (!isEditMode) return;
+                                    const startX = e.clientX;
+                                    const startY = e.clientY;
+                                    const initialX = obj.x;
+                                    const initialY = obj.y;
+
+                                    const onMouseMove = (moveEvent) => {
+                                        const dx = moveEvent.clientX - startX;
+                                        const dy = moveEvent.clientY - startY;
+                                        const newObjs = [...objects];
+                                        newObjs[i] = { ...obj, x: initialX + dx, y: initialY + dy };
+                                        setObjects(newObjs);
+                                    };
+
+                                    const onMouseUp = () => {
+                                        document.removeEventListener('mousemove', onMouseMove);
+                                        document.removeEventListener('mouseup', onMouseUp);
+                                    };
+
+                                    document.addEventListener('mousemove', onMouseMove);
+                                    document.addEventListener('mouseup', onMouseUp);
+                                }}
+                            >
+                                {isEditMode && (
+                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex gap-1 bg-black/80 p-1 rounded backdrop-blur border border-white/20 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={e=>e.stopPropagation()}>
+                                        <button onClick={() => {
+                                            const newObjs=[...objects];
+                                            newObjs[i].w += 10;
+                                            setObjects(newObjs);
+                                        }} className="w-5 h-5 bg-[#393b45] rounded text-white text-[10px] flex items-center justify-center font-bold">W+</button>
+                                        <button onClick={() => {
+                                            const newObjs=[...objects];
+                                            newObjs[i].h += 10;
+                                            setObjects(newObjs);
+                                        }} className="w-5 h-5 bg-[#393b45] rounded text-white text-[10px] flex items-center justify-center font-bold">H+</button>
+                                        <button onClick={() => setObjects(objects.filter(o => o.id !== obj.id))} className="w-5 h-5 bg-red-600 rounded text-white text-[10px] flex items-center justify-center font-bold">X</button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+
+                        {/* Player Character */}
+                        <div 
+                            style={{ left: playerPos.x, top: playerPos.y, transform: 'translate(-50%, -100%)' }}
+                            className="absolute z-40 transition-none"
+                        >
+                            {/* Player Nameplate */}
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md border border-white/10 shadow-lg pointer-events-none">
+                                <span className="text-white text-[10px] font-black tracking-widest uppercase whitespace-nowrap">{profile.username}</span>
+                            </div>
+                            
+                            {/* Render miniaturized Avatar Preview */}
+                            <div className="w-[48px] h-[64px] relative origin-bottom drop-shadow-2xl">
+                                <div className="absolute inset-0" style={{ transform: 'scale(0.25)', transformOrigin: 'top left', width: '192px', height: '256px' }}>
+                                    <AvatarPreview avatar={profile.avatar || {}} />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Instructions overlay if play mode */}
+                        {!isEditMode && (
+                            <div className="absolute bottom-6 left-6 bg-black/40 backdrop-blur p-4 rounded-xl border border-white/10 text-white pointer-events-none">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Controls</p>
+                                <div className="flex gap-2 font-bold text-xs">
+                                    <kbd className="bg-[#111216] border border-[#393b45] px-2 py-1 rounded shadow-inner">W</kbd>
+                                    <kbd className="bg-[#111216] border border-[#393b45] px-2 py-1 rounded shadow-inner">A</kbd>
+                                    <kbd className="bg-[#111216] border border-[#393b45] px-2 py-1 rounded shadow-inner">S</kbd>
+                                    <kbd className="bg-[#111216] border border-[#393b45] px-2 py-1 rounded shadow-inner">D</kbd>
+                                    <span className="ml-2 text-slate-400">to move</span>
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+                </div>
+            );
+        };
+
+        // --- MAIN APP ---
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [profile, setProfile] = useState(null);
+            const [tab, setTab] = useState('DISCOVER'); // DISCOVER, AVATAR, SHOP, CREATE
+            const [playingGame, setPlayingGame] = useState(null);
+            const [authChecked, setAuthChecked] = useState(false);
+
+            useEffect(() => {
+                return auth.onAuthStateChanged(u => {
+                    setAuthChecked(true);
+                    if (u) {
+                        setUser(u);
+                        db.collection('profiles').doc(u.uid).onSnapshot(s => {
+                            if (s.exists) setProfile({ id: s.id, ...s.data() });
+                        });
+                    } else {
+                        setUser(null);
+                        setProfile(null);
+                    }
+                });
+            }, []);
+
+            if (!authChecked) return <div className="h-screen bg-[#111216] flex items-center justify-center"><div className="w-12 h-12 border-4 border-[#393b45] border-t-blue-500 rounded-full animate-spin"></div></div>;
+            if (!user) return <AuthScreen />;
+            if (!profile) return <div className="h-screen bg-[#111216] flex items-center justify-center"><p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Loading Profile...</p></div>;
+
+            if (playingGame) {
+                return <GameClient game={playingGame} onExit={() => setPlayingGame(null)} profile={profile} />;
+            }
+
+            return (
+                <div className="h-screen bg-[#111216] text-slate-200 flex flex-col overflow-hidden">
+                    <TopNav profile={profile} setTab={setTab} tab={tab} onLogout={() => auth.signOut()} />
+                    <main className="flex-1 overflow-y-auto bg-[#0f1218] p-6 lg:p-8 hide-scroll relative z-0">
+                        {/* Subtle background glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-blue-600/5 rounded-full blur-[100px] pointer-events-none -z-10"></div>
+                        
+                        <div className="h-full max-w-7xl mx-auto animate-in fade-in duration-500">
+                            {tab === 'DISCOVER' && <DiscoverTab onPlay={setPlayingGame} />}
+                            {tab === 'AVATAR' && <AvatarTab profile={profile} user={user} />}
+                            {tab === 'SHOP' && <ShopTab profile={profile} user={user} />}
+                            {tab === 'CREATE' && <CreateTab profile={profile} user={user} />}
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>
 </html>
-
