@@ -3,106 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BlockVerse Metaverse</title>
+    <title>BlockVerse Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase Legacy SDKs for best mobile compatibility -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
-        body { margin: 0; background: #020617; color: white; font-family: 'Inter', sans-serif; overflow: hidden; touch-action: manipulation; }
-        canvas { display: block; background: #0f172a; width: 100vw; height: 100vh; }
-        .glass { backdrop-filter: blur(16px); background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); }
-        input::placeholder { color: #64748b; }
+        @import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@700&family=Inter:wght@400;900&display=swap');
+        body { margin: 0; background: #020617; color: white; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .neon-border { border: 1px solid rgba(59, 130, 246, 0.5); box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
+        .glass { backdrop-filter: blur(20px); background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .admin-glow { box-shadow: 0 0 30px rgba(239, 68, 68, 0.3); border: 1px solid rgba(239, 68, 68, 0.5); }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 1. CONFIGURATION (REPLACE WITH YOUR FIREBASE KEYS) ---
+        // --- YOUR VERIFIED CONFIGURATION ---
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyDWGA4LelpAKz-o7rYLpOd7Gjz_qa5RA50",
+            authDomain: "bloxverse-89800.firebaseapp.com",
+            projectId: "bloxverse-89800",
+            storageBucket: "bloxverse-89800.firebasestorage.app",
+            messagingSenderId: "82457717231",
+            appId: "1:82457717231:web:cdbfb0f42a890958eeee1a"
         };
 
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
-        auth.languageCode = 'en'; // Force English
 
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect } = React;
 
         function App() {
             const [user, setUser] = useState(null);
             const [profile, setProfile] = useState(null);
-            const [view, setView] = useState('LOADING'); 
-            const [authMode, setAuthMode] = useState('LOGIN');
+            const [view, setView] = useState('AUTH'); 
+            const [authMode, setAuthMode] = useState('LOGIN'); // 'LOGIN' or 'SIGNUP'
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [username, setUsername] = useState('');
             const [error, setError] = useState('');
-            
-            // Auth State Listener
+            const [loading, setLoading] = useState(false);
+
             useEffect(() => {
-                return auth.onAuthStateChanged(async (u) => {
+                const unsubscribe = auth.onAuthStateChanged(async (u) => {
                     if (u) {
                         const snap = await db.collection('profiles').doc(u.uid).get();
                         if (snap.exists) {
                             setProfile(snap.data());
                             setView('HOME');
-                        } else { setView('AUTH'); }
+                        }
                         setUser(u);
-                    } else { setView('AUTH'); setUser(null); }
+                    } else {
+                        setView('AUTH');
+                        setUser(null);
+                        setProfile(null);
+                    }
                 });
+                return () => unsubscribe();
             }, []);
 
             const handleAuth = async () => {
                 setError('');
+                setLoading(true);
                 try {
                     if (authMode === 'SIGNUP') {
+                        if (username.length < 3) throw new Error("Username too short");
                         const cred = await auth.createUserWithEmailAndPassword(email, password);
-                        const data = { 
-                            username, email, coins: 500, 
-                            inventory: [], isAdmin: username.toLowerCase() === 'bloxverse' 
+                        
+                        // ADMIN LOGIC: If name is Bloxverse, they are God Mode
+                        const isAdmin = username === "Bloxverse";
+                        
+                        const userData = {
+                            uid: cred.user.uid,
+                            username: username,
+                            coins: isAdmin ? 999999 : 500,
+                            isAdmin: isAdmin,
+                            createdAt: new Date().toISOString()
                         };
-                        await db.collection('profiles').doc(cred.user.uid).set(data);
+                        await db.collection('profiles').doc(cred.user.uid).set(userData);
+                        setProfile(userData);
                     } else {
                         await auth.signInWithEmailAndPassword(email, password);
                     }
-                } catch (err) { setError(err.message); }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
             };
-
-            if (view === 'LOADING') return <div className="h-screen flex items-center justify-center font-black text-blue-500">BOOTING BLOCKVERSE...</div>;
 
             if (view === 'AUTH') return (
                 <div className="h-screen flex items-center justify-center p-6 bg-slate-950">
-                    <div className="glass p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl">
-                        <h1 className="text-4xl font-black italic mb-2 tracking-tighter">BLOCK<span className="text-blue-500">VERSE</span></h1>
-                        <p className="text-slate-500 text-sm mb-8 font-bold uppercase tracking-widest">Global Protocol Loaded</p>
+                    <div className="glass p-10 rounded-[2.5rem] w-full max-w-sm shadow-2xl border border-white/10">
+                        <h1 className="text-3xl font-black italic mb-2 tracking-tighter text-center">BLOCK<span className="text-blue-500">VERSE</span></h1>
+                        <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase mb-8 text-center">Protocol v2.0</p>
                         
                         <div className="space-y-4">
                             {authMode === 'SIGNUP' && (
-                                <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 outline-none focus:ring-2 ring-blue-500" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
+                                <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/5 outline-none focus:ring-2 ring-blue-500 font-bold" 
+                                placeholder="Username (Bloxverse for Admin)" value={username} onChange={e => setUsername(e.target.value)} />
                             )}
-                            <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 outline-none focus:ring-2 ring-blue-500" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
-                            <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 outline-none focus:ring-2 ring-blue-500" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+                            <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/5 outline-none focus:ring-2 ring-blue-500 font-bold" 
+                            placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+                            <input className="w-full p-4 bg-white/5 rounded-2xl border border-white/5 outline-none focus:ring-2 ring-blue-500 font-bold" 
+                            type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
                             
-                            {error && <p className="text-red-400 text-xs font-bold">{error}</p>}
+                            {error && <p className="text-red-400 text-[10px] font-bold uppercase text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
 
-                            <button onClick={handleAuth} className="w-full bg-blue-600 p-4 rounded-2xl font-black shadow-lg hover:bg-blue-500 transition-all">
-                                {authMode === 'LOGIN' ? 'ENTER SYSTEM' : 'INITIALIZE ACCOUNT'}
+                            <button onClick={handleAuth} disabled={loading} className="w-full bg-blue-600 p-5 rounded-2xl font-black shadow-lg active:scale-95 transition-all">
+                                {loading ? "SYNCING..." : authMode === 'LOGIN' ? "LOGIN" : "CREATE ACCOUNT"}
                             </button>
 
-                            <button onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')} className="w-full text-slate-500 text-xs font-bold mt-4">
-                                {authMode === 'LOGIN' ? "Protocol: Create New User" : "Protocol: Login Existing"}
+                            <button onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')} className="w-full text-slate-500 text-[10px] font-black uppercase mt-4">
+                                {authMode === 'LOGIN' ? "New User? Register" : "Have account? Login"}
                             </button>
                         </div>
                     </div>
@@ -110,21 +130,44 @@
             );
 
             return (
-                <div className="h-screen flex flex-col">
-                    <header className="p-6 flex justify-between items-center border-b border-white/5">
-                        <h1 className="font-black italic text-xl">BLOCK<span className="text-blue-500">VERSE</span></h1>
-                        <div className="flex items-center gap-4">
-                            <span className="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl text-xs font-black border border-blue-500/20">{profile?.coins} ¢</span>
-                            <button onClick={() => auth.signOut()} className="text-slate-500 text-xs font-bold">LOGOUT</button>
+                <div className="h-screen flex flex-col p-6 overflow-hidden bg-slate-950">
+                    <header className="flex justify-between items-center mb-10">
+                        <div>
+                            <h2 className="text-xl font-black italic tracking-tighter">BLOCK<span className="text-blue-500">VERSE</span></h2>
+                            <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Global Plaza</p>
+                        </div>
+                        <div className="bg-blue-600/10 px-4 py-2 rounded-xl border border-blue-500/20">
+                            <span className="text-blue-400 font-black text-sm">{profile?.coins.toLocaleString()} ¢</span>
                         </div>
                     </header>
-                    <main className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                        <h2 className="text-5xl font-black mb-4">Welcome, {profile?.username}</h2>
-                        <p className="text-slate-400 max-w-sm mb-10">Your account is fully synced and ready for the metaverse.</p>
-                        <button className="bg-blue-600 px-12 py-5 rounded-3xl font-black text-xl shadow-2xl shadow-blue-500/20 active:scale-95 transition-all">
-                            ENTER PLAZA
-                        </button>
+
+                    <main className="flex-1 flex flex-col items-center justify-center text-center">
+                        {profile?.isAdmin && (
+                            <div className="mb-4 bg-red-500/20 text-red-500 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-500/50 admin-glow">
+                                System Administrator Active
+                            </div>
+                        )}
+                        <h1 className="text-5xl font-black mb-4">Welcome back,<br/><span className="text-blue-500">{profile?.username}</span></h1>
+                        <p className="text-slate-400 text-sm max-w-xs mb-10">You are connected to the central server. Ready to initialize the metaverse?</p>
+                        
+                        <div className="grid grid-cols-1 gap-4 w-full max-w-xs">
+                            <button className="bg-white text-black p-5 rounded-3xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all">
+                                ENTER PLAZA
+                            </button>
+                            
+                            {profile?.isAdmin && (
+                                <button className="bg-red-600/10 text-red-500 border border-red-500/50 p-4 rounded-3xl font-black text-xs uppercase tracking-widest">
+                                    Open Admin Console
+                                </button>
+                            )}
+                        </div>
                     </main>
+
+                    <footer className="mt-auto text-center">
+                        <button onClick={() => auth.signOut()} className="text-slate-600 hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors">
+                            Logout of {profile?.username}
+                        </button>
+                    </footer>
                 </div>
             );
         }
